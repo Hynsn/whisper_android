@@ -6,4 +6,6 @@
     <string name="processing">Processing...</string>
     <string name="stop">Stop</string>
     <string name="need_record_audio_permission">"This app needs RECORD_AUDIO permission"</string>
+    <string name="start">Start</string>
+    <string name="copy">Copy</string>
 </resources>

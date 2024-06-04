@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "WhisperTFLite"
 include ':app'
+include ':wer-lib'
+project(':wer-lib').projectDir = new File("../SherpaNcnn/wer-lib")

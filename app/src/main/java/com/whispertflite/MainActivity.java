@@ -9,17 +9,22 @@ import android.content.res.AssetManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import com.asr.wer.CSVUtil;
+import com.asr.wer.Column;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.whispertflite.asr.IRecorderListener;
 import com.whispertflite.asr.IWhisperListener;
@@ -33,21 +38,45 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
-    private final String TAG = "MainActivity";
-
+    private static final String TAG = "MainActivity";
+    List<Column> columnList;
     private TextView tvStatus;
     private TextView tvResult;
     private FloatingActionButton fabCopy;
 
     private Whisper mWhisper = null;
     private Recorder mRecorder = null;
+    private long start = System.currentTimeMillis();
+
+    private Handler handler1 = new Handler(new Handler.Callback() {
+        @Override
+        public boolean handleMessage(@NonNull Message msg) {
+            if (msg.what == 1) {
+                columnList.get(index).setResult(msg.obj.toString(), msg.arg1);
+                tvResult.setText("处理第" + index + "条");
+                index++;
+                if (index >= columnList.size()) {
+                    tvResult.append("处理结束写入CSV文件");
+                    CSVUtil.INSTANCE.writeFile(getApplicationContext(), columnList);
+                } else {
+                    String waveFilePath = getFilePath(columnList.get(index).getPath());
+                    startTranscription(waveFilePath);
+                }
+            }
+            return false;
+        }
+    });
+    private int index = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         final String[] waveFileName = {null};
         final Handler handler = new Handler(Looper.getMainLooper());
@@ -93,6 +122,24 @@ public class MainActivity extends AppCompatActivity {
                 String waveFilePath = getFilePath(waveFileName[0]);
                 startTranscription(waveFilePath);
             }
+        });
+        Button btnStart = findViewById(R.id.btn_start);
+        btnStart.setOnClickListener(v -> {
+            index = 0;
+            if (mWhisper != null && mWhisper.isInProgress()) {
+                Log.d(TAG, "Whisper is already in progress...!");
+                stopTranscription();
+            } else {
+                if (columnList == null || columnList.isEmpty()) {
+                    columnList = CSVUtil.INSTANCE.readFile(getBaseContext(), "train/fleurs_dataset.csv");
+                }
+                String waveFilePath = getFilePath(columnList.get(index).getPath());
+                startTranscription(waveFilePath);
+            }
+        });
+        Button btnCopy = findViewById(R.id.btn_copy);
+        btnCopy.setOnClickListener(v -> {
+            copyTrainToDataFolder(this);
         });
 
         // Implementation of file spinner functionality
@@ -158,7 +205,7 @@ public class MainActivity extends AppCompatActivity {
                 handler.post(() -> tvStatus.setText(message));
 
                 if (message.equals(Whisper.MSG_PROCESSING)) {
-                    handler.post(() -> tvResult.setText(""));
+                    handler.post(() -> tvResult.setText("处理第" + index + "条"));
                 } else if (message.equals(Whisper.MSG_FILE_NOT_FOUND)) {
                     // write code as per need to handled this error
                     Log.d(TAG, "File not found error...!");
@@ -166,9 +213,14 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onResultReceived(String result) {
-                Log.d(TAG, "Result: " + result);
-                handler.post(() -> tvResult.append(result));
+            public void onResultReceived(String result, long time) {
+                //                Log.d(TAG, "Result: " + result + "," + time);
+                Message msg = new Message();
+                msg.what = 1;
+                msg.obj = result;
+                msg.arg1 = (int) time;
+                handler1.sendMessage(msg);
+                //                handler.post(() -> tvResult.append(result));
             }
         });
 
@@ -197,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
         checkRecordPermission();
 
         // for debugging
-//        testParallelProcessing();
+        //        testParallelProcessing();
     }
 
     private void checkRecordPermission() {
@@ -274,7 +326,46 @@ public class MainActivity extends AppCompatActivity {
                         outputStream.close();
                     }
                 }
+
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void copyTrainToDataFolder(Context context) {
+        AssetManager assetManager = context.getAssets();
+        try {
+            String destFolder = context.getFilesDir().getAbsolutePath() + "/train/";
+            File dir = new File(destFolder);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            String[] trains = assetManager.list("train");
+            Log.i(TAG, "copyAssetsWithExtensionsToDataFolder: " + trains.length);
+            for (String assetFileName : trains) {
+                if (assetFileName.endsWith(".wav")) {
+                    File outFile = new File(destFolder, assetFileName);
+                    if (outFile.exists())
+                        continue;
+
+                    InputStream inputStream = assetManager.open("train/" + assetFileName);
+                    OutputStream outputStream = new FileOutputStream(outFile);
+
+                    // Copy the file from assets to the data folder
+                    byte[] buffer = new byte[1024];
+                    int read;
+                    while ((read = inputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, read);
+                    }
+
+                    inputStream.close();
+                    outputStream.flush();
+                    outputStream.close();
+                }
+            }
+            Log.i(TAG, "copyTrainToDataFolder: " + Objects.requireNonNull(dir.listFiles()).length + "," + trains.length);
+
         } catch (IOException e) {
             e.printStackTrace();
         }

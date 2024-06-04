@@ -28,9 +28,9 @@ public class Whisper {
     private Thread mMicTranscribeThread = null;
 
     // TODO: use WhisperEngine as per requirement
-//    private final IWhisperEngine mWhisperEngine = new WhisperEngine();
+    //    private final IWhisperEngine mWhisperEngine = new WhisperEngine();
     private final IWhisperEngine mWhisperEngine = new WhisperEngineNative();
-//    private final IWhisperEngine mWhisperEngine = new WhisperEngineTwoModel();
+    //    private final IWhisperEngine mWhisperEngine = new WhisperEngineTwoModel();
 
     private String mAction = null;
     private String mWavFilePath = null;
@@ -102,9 +102,9 @@ public class Whisper {
             mUpdateListener.onUpdateReceived(message);
     }
 
-    private void sendResult(String message) {
+    private void sendResult(String message, long elapsed) {
         if (mUpdateListener != null)
-            mUpdateListener.onResultReceived(message);
+            mUpdateListener.onResultReceived(message, elapsed);
     }
 
     private void threadFunction() {
@@ -118,25 +118,25 @@ public class Whisper {
                     long startTime = System.currentTimeMillis();
                     sendUpdate(MSG_PROCESSING);
 
-//                    String result = "";
-//                    if (mAction.equals(ACTION_TRANSCRIBE))
-//                        result = mWhisperEngine.getTranscription(mWavFilePath);
-//                    else if (mAction == ACTION_TRANSLATE)
-//                        result = mWhisperEngine.getTranslation(mWavFilePath);
+                    //                    String result = "";
+                    //                    if (mAction.equals(ACTION_TRANSCRIBE))
+                    //                        result = mWhisperEngine.getTranscription(mWavFilePath);
+                    //                    else if (mAction == ACTION_TRANSLATE)
+                    //                        result = mWhisperEngine.getTranslation(mWavFilePath);
 
                     // Get result from wav file
                     synchronized (mWhisperEngineLock) {
                         String result = mWhisperEngine.transcribeFile(mWavFilePath);
-                        sendResult(result);
+                        // Calculate time required for transcription
+                        long endTime = System.currentTimeMillis();
+                        long timeTaken = endTime - startTime;
+                        sendResult(result, timeTaken);
+                        Log.d(TAG, "Time Taken for transcription: " + timeTaken + "ms");
                         Log.d(TAG, "Result len: " + result.length() + ", Result: " + result);
                     }
 
                     sendUpdate(MSG_PROCESSING_DONE);
 
-                    // Calculate time required for transcription
-                    long endTime = System.currentTimeMillis();
-                    long timeTaken = endTime - startTime;
-                    Log.d(TAG, "Time Taken for transcription: " + timeTaken + "ms");
                 } else {
                     sendUpdate(MSG_FILE_NOT_FOUND);
                 }
@@ -172,7 +172,7 @@ public class Whisper {
 
     // Mic data transcription thread in realtime
     private void startMicTranscriptionThread() {
-        if(mMicTranscribeThread == null) {
+        if (mMicTranscribeThread == null) {
             // Create a transcribe thread
             mMicTranscribeThread = new Thread(() -> {
                 while (true) {
@@ -180,7 +180,7 @@ public class Whisper {
                     if (samples != null) {
                         synchronized (mWhisperEngineLock) {
                             String result = mWhisperEngine.transcribeBuffer(samples);
-                            sendResult(result);
+                            sendResult(result, -1);
                         }
                     }
                 }
